@@ -25,7 +25,7 @@ DATABASE_URL=postgresql://user:password@localhost/dbname
 REDIS_URL=redis://localhost:6379
 IP=127.0.0.1
 PORT=8080
-BASE_URL=http://127.0.0.1:8080
+BASE_URL=http://127.0.0.1:8080  # или https://yourdomain.com
 ```
 
 Запустите:
