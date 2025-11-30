@@ -40,6 +40,12 @@ cargo run
 - `GET /api/config` - получение конфигурации
 - `GET /r/{code}` - редирект по короткой ссылке
 
+## Rate Limiting
+
+Приложение использует rate limiting через `tower-governor`:
+- **10 запросов в секунду** на IP-адрес
+- **Burst size: 20** - максимум 20 запросов за раз
+
 ## Деплой
 
 Установите `BASE_URL=https://yourdomain.com` в `.env`.

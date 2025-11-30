@@ -21,7 +21,6 @@ impl Service {
         let redis_url = std::env::var("REDIS_URL")?;
         let pool = PgPool::connect(&database).await?;
         let redis = Client::open(redis_url)?;
-
         let url_shortener = UrlShortener::new(pool.clone(), redis.clone()).await?;
         Ok(Arc::new(Self {
             pool,

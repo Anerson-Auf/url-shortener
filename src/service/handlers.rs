@@ -5,6 +5,10 @@ use std::sync::Arc;
 use axum::routing::{get, post};
 use axum::Router;
 use tower_http::services::ServeDir;
+use tower_governor::{governor::GovernorConfigBuilder, GovernorLayer, key_extractor::KeyExtractor, GovernorError};
+use std::time::Duration;
+use axum::http::Request;
+use std::net::SocketAddr;
 
 #[allow(unused)]
 pub async fn get_config() -> (StatusCode, Json<serde_json::Value>) {
@@ -22,7 +26,10 @@ pub async fn short_url(
 ) -> (StatusCode, Json<String>) {
     match service.url_shortener.create_short_url(&payload.url).await {
         Ok(short) => (StatusCode::OK, Json(short)),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(format!("Error: {}", e))),
+        Err(e) => {
+            tracing::error!("Error creating short URL: {}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(format!("Error: {}", e)))
+        },
     }
 }
 
@@ -49,11 +56,59 @@ pub async fn redirect(
     }
 }
 
+#[derive(Clone)]
+struct AxumIpKeyExtractor;
+
+impl KeyExtractor for AxumIpKeyExtractor {
+    type Key = String;
+
+    fn extract<T>(&self, req: &Request<T>) -> Result<Self::Key, tower_governor::GovernorError> {
+        if let Some(addr) = req.extensions().get::<SocketAddr>() {
+            Ok(addr.ip().to_string())
+        } else if let Some(forwarded) = req.headers().get("x-forwarded-for") {
+            forwarded.to_str()
+                .ok()
+                .and_then(|s| s.split(',').next().map(|ip| ip.trim().to_string()))
+                .ok_or(GovernorError::UnableToExtractKey)
+        } else if let Some(real_ip) = req.headers().get("x-real-ip") {
+            real_ip.to_str()
+                .ok()
+                .map(|s| s.to_string())
+                .ok_or(GovernorError::UnableToExtractKey)
+        } else {
+            Ok("unknown".to_string())
+        }
+    }
+}
+
 pub fn router() -> Router<std::sync::Arc<Service>> {
-    Router::new()
+    let governor_conf = Arc::new(
+        GovernorConfigBuilder::default()
+            .per_second(10)
+            .burst_size(20)
+            .key_extractor(AxumIpKeyExtractor)
+            .finish()
+            .unwrap(),
+    );
+
+    let governor_limiter = governor_conf.limiter().clone();
+    let interval = Duration::from_secs(60);
+    std::thread::spawn(move || {
+        loop {
+            std::thread::sleep(interval);
+            tracing::info!("rate limiting storage size: {}", governor_limiter.len());
+            governor_limiter.retain_recent();
+        }
+    });
+
+    let api_routes = Router::new()
         .route("/api/config", get(get_config))
         .route("/api/short-url", post(short_url))
         .route("/r/{code}", get(redirect))
+        .layer(GovernorLayer::new(governor_conf));
+
+    Router::new()
+        .merge(api_routes)
         .nest_service("/static", ServeDir::new("static"))
         .fallback_service(ServeDir::new("static"))
 }

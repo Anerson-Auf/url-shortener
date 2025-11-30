@@ -40,7 +40,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                             textElement.textContent = fullUrl;
                         }
                     } else {
-                        console.error('Error:', response.status, response.statusText);
+                        const errorText = await response.text();
+                        console.error('Error:', response.status, response.statusText, errorText);
+                        alert(`Error: ${response.status} - ${errorText}`);
                     }
                 } catch (error) {
                     console.error('Error:', error);
