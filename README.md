@@ -2,6 +2,8 @@
 
 Веб-приложение для сокращения URL на Rust.
 
+![Interface](https://u.yufu.su/vdJ.png)
+
 ## Требования
 
 - Rust
